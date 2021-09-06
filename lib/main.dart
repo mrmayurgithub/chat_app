@@ -26,7 +26,7 @@ class MyApp extends StatelessWidget {
         primaryColor: UIColors.primaryColor,
         accentColor: UIColors.accentColor,
       ),
-      home: LandingScreen(),
+      home: OldLogin(),
     );
   }
 }

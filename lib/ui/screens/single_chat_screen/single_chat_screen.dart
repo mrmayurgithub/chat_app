@@ -1,11 +1,20 @@
+import 'dart:convert';
+
 import 'package:chatapp/models/chat_model.dart';
 import 'package:chatapp/models/message_model.dart';
+import 'package:chatapp/ui/components/own_file_card.dart';
 import 'package:chatapp/ui/components/own_message_card.dart';
 import 'package:chatapp/ui/components/reply_card.dart';
+import 'package:chatapp/ui/components/reply_file_card.dart';
+import 'package:chatapp/ui/screens/camera_screen/camera_screen.dart';
+import 'package:chatapp/ui/screens/camera_screen/camera_view.dart';
 import 'package:emoji_picker/emoji_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:http/http.dart' as http;
 
 class SingleChatScreen extends StatefulWidget {
   SingleChatScreen({Key key, this.chatModel, this.sourchat}) : super(key: key);
@@ -24,6 +33,9 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
   TextEditingController _controller = TextEditingController();
   ScrollController _scrollController = ScrollController();
   IO.Socket socket;
+  ImagePicker _picker = ImagePicker();
+  XFile imageFile;
+  int popTime = 0;
   @override
   void initState() {
     super.initState();
@@ -40,9 +52,9 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
 
   void connect() {
     // MessageModel messageModel = MessageModel(sourceId: widget.sourceChat.id.toString(),targetId: );
-    // socket = IO.io("http://192.168.1.36:5000", <String, dynamic>{
-    socket = IO
-        .io("https://aqueous-lowlands-07135.herokuapp.com/", <String, dynamic>{
+    socket = IO.io("http://192.168.1.36:5000/", <String, dynamic>{
+      // socket = IO
+      //     .io("https://aqueous-lowlands-07135.herokuapp.com/", <String, dynamic>{
       "transports": ["websocket"],
       "autoConnect": false,
     });
@@ -52,7 +64,7 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
       print("Connected");
       socket.on("message", (msg) {
         print("........................." + msg.toString());
-        setMessage("destination", msg["message"]);
+        setMessage("destination", msg["message"], msg["path"]);
         _scrollController.animateTo(_scrollController.position.maxScrollExtent,
             duration: Duration(milliseconds: 300), curve: Curves.easeOut);
       });
@@ -60,22 +72,53 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
     print(socket.connected);
   }
 
-  void sendMessage(String message, int sourceId, int targetId) {
-    setMessage("source", message);
-    socket.emit("message",
-        {"message": message, "sourceId": sourceId, "targetId": targetId});
+  void sendMessage(String message, int sourceId, int targetId, String path) {
+    setMessage("source", message, path);
+    socket.emit("message", {
+      "message": message,
+      "sourceId": sourceId,
+      "targetId": targetId,
+      "path": path,
+    });
   }
 
-  void setMessage(String type, String message) {
+  void setMessage(String type, String message, String path) {
     MessageModel messageModel = MessageModel(
         type: type,
         message: message,
-        time: DateTime.now().toString().substring(10, 16));
+        time: DateTime.now().toString().substring(10, 16),
+        path: path);
     print("SET MESSAGE::::::::::::::" + message);
     if (this.mounted)
       setState(() {
         messages.add(messageModel);
       });
+  }
+
+  void onImageImage(String path, String message) async {
+    print("Hey there! Everything's working $message");
+
+    for (var i = 0; i < popTime; i++) Get.back();
+    setState(() {
+      popTime = 0;
+    });
+    var request = http.MultipartRequest(
+        "POST", Uri.parse("http://192.168.1.36:5000/routes/addimage"));
+    request.files.add(await http.MultipartFile.fromPath("img", path));
+    request.headers.addAll({
+      "Content-type": "multipart/form-data",
+    });
+    http.StreamedResponse response = await request.send();
+    var httpResponse = await http.Response.fromStream(response);
+    var data = json.decode(httpResponse.body);
+    print("________________________________--" + data['path']);
+    setMessage("source", message, path);
+    socket.emit("message", {
+      "message": message,
+      "sourceId": widget.sourchat.id,
+      "targetId": widget.chatModel.id,
+      "path": data['path'],
+    });
   }
 
   @override
@@ -205,15 +248,33 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
                           );
                         }
                         if (messages[index].type == "source") {
-                          return OwnMessageCard(
-                            message: messages[index].message,
-                            time: messages[index].time,
-                          );
+                          if (messages[index].path != null &&
+                              messages[index].path.length > 1) {
+                            return OwnFileCard(
+                              path: messages[index].path,
+                              message: messages[index].message,
+                              time: messages[index].time,
+                            );
+                          } else {
+                            return OwnMessageCard(
+                              message: messages[index].message,
+                              time: messages[index].time,
+                            );
+                          }
                         } else {
-                          return ReplyCard(
-                            message: messages[index].message,
-                            time: messages[index].time,
-                          );
+                          if (messages[index].path != null &&
+                              messages[index].path.length > 1) {
+                            return ReplyFileCard(
+                              path: messages[index].path,
+                              message: messages[index].message,
+                              time: messages[index].time,
+                            );
+                          } else {
+                            return ReplyCard(
+                              message: messages[index].message,
+                              time: messages[index].time,
+                            );
+                          }
                         }
                       },
                     ),
@@ -293,11 +354,14 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
                                           IconButton(
                                             icon: Icon(Icons.camera_alt),
                                             onPressed: () {
-                                              // Navigator.push(
-                                              //     context,
-                                              //     MaterialPageRoute(
-                                              //         builder: (builder) =>
-                                              //             CameraApp()));
+                                              setState(() {
+                                                popTime = 2;
+                                              });
+                                              Get.to(
+                                                () => CameraScreen(
+                                                  onImageSend: onImageImage,
+                                                ),
+                                              );
                                             },
                                           ),
                                         ],
@@ -330,9 +394,11 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
                                                 Duration(milliseconds: 300),
                                             curve: Curves.easeOut);
                                         sendMessage(
-                                            _controller.text,
-                                            widget.sourchat.id,
-                                            widget.chatModel.id);
+                                          _controller.text,
+                                          widget.sourchat.id,
+                                          widget.chatModel.id,
+                                          "",
+                                        );
                                         _controller.clear();
                                         if (this.mounted)
                                           setState(() {
@@ -385,15 +451,50 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   iconCreation(
-                      Icons.insert_drive_file, Colors.indigo, "Document"),
+                    Icons.insert_drive_file,
+                    Colors.indigo,
+                    "Document",
+                    () {},
+                  ),
                   SizedBox(
                     width: 40,
                   ),
-                  iconCreation(Icons.camera_alt, Colors.pink, "Camera"),
+                  iconCreation(
+                    Icons.camera_alt,
+                    Colors.pink,
+                    "Camera",
+                    () async {
+                      setState(() {
+                        popTime = 3;
+                      });
+                      Get.to(
+                        () => CameraScreen(
+                          onImageSend: onImageImage,
+                        ),
+                      );
+                    },
+                  ),
                   SizedBox(
                     width: 40,
                   ),
-                  iconCreation(Icons.insert_photo, Colors.purple, "Gallery"),
+                  iconCreation(
+                    Icons.insert_photo,
+                    Colors.purple,
+                    "Gallery",
+                    () async {
+                      setState(() {
+                        popTime = 2;
+                      });
+                      imageFile =
+                          await _picker.pickImage(source: ImageSource.gallery);
+                      Get.to(
+                        () => CameraViewPage(
+                          path: imageFile.path,
+                          onImageSend: onImageImage,
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
               SizedBox(
@@ -402,15 +503,30 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  iconCreation(Icons.headset, Colors.orange, "Audio"),
+                  iconCreation(
+                    Icons.headset,
+                    Colors.orange,
+                    "Audio",
+                    () {},
+                  ),
                   SizedBox(
                     width: 40,
                   ),
-                  iconCreation(Icons.location_pin, Colors.teal, "Location"),
+                  iconCreation(
+                    Icons.location_pin,
+                    Colors.teal,
+                    "Location",
+                    () {},
+                  ),
                   SizedBox(
                     width: 40,
                   ),
-                  iconCreation(Icons.person, Colors.blue, "Contact"),
+                  iconCreation(
+                    Icons.person,
+                    Colors.blue,
+                    "Contact",
+                    () {},
+                  ),
                 ],
               ),
             ],
@@ -420,9 +536,10 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
     );
   }
 
-  Widget iconCreation(IconData icons, Color color, String text) {
+  Widget iconCreation(
+      IconData icons, Color color, String text, Function onTap) {
     return InkWell(
-      onTap: () {},
+      onTap: onTap,
       child: Column(
         children: [
           CircleAvatar(

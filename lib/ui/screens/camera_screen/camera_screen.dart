@@ -5,9 +5,11 @@ import 'package:chatapp/main.dart';
 import 'package:chatapp/ui/screens/camera_screen/camera_view.dart';
 import 'package:chatapp/ui/screens/camera_screen/video_view.dart';
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 
 class CameraScreen extends StatefulWidget {
-  CameraScreen({Key key}) : super(key: key);
+  CameraScreen({this.onImageSend});
+  Function onImageSend;
 
   @override
   _CameraScreenState createState() => _CameraScreenState();
@@ -159,12 +161,10 @@ class _CameraScreenState extends State<CameraScreen> {
 
   void takePhoto(BuildContext context) async {
     XFile file = await _cameraController.takePicture();
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (builder) => CameraViewPage(
-          path: file.path,
-        ),
+    Get.to(
+      () => CameraViewPage(
+        path: file.path,
+        onImageSend: widget.onImageSend,
       ),
     );
   }
